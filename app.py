@@ -1,2 +1,2 @@
-input streamlit as lt
+import streamlit as lt
 st.title("Strealit Chatbot")
