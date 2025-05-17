@@ -107,4 +107,4 @@ if user_input:
                     error_msg = f"Error processing text request: {str(e)}"
                     st.markdown(error_msg)
                     st.session_state.chat_history.append(AIMessage(content=error_msg))
-                    st.session_state.chat_history.append(AIMessage(content=error_ms
+                    st.session_state.chat_history.append(AIMessage(content=error_ms))
