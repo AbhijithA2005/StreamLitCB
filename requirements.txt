@@ -1,3 +1,2 @@
 streamlit
-st.title("Streamlit chatbot")
 langchain_google_genai
