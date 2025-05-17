@@ -12,21 +12,25 @@ import re
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 except KeyError:
-    st.error("GOOGLE_API_KEY not found in Streamlit secrets. Please configure it.")
+    st.error("GOOGLE_API_KEY not found in Streamlit secrets. Please configure it in Streamlit Cloud settings.")
     st.stop()
 
 # Initialize the text-based LLM
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=st.secrets["GOOGLE_API_KEY"])
 
 # Initialize Google Generative AI client for image generation
-client = genai.GenerativeModel(model_name="gemini-2.0-flash-preview-image-generation")
+try:
+    client = genai.GenerativeModel(model_name="gemini-1.5-flash")
+except Exception as e:
+    st.error(f"Failed to initialize image generation model: {str(e)}")
+    st.stop()
 
 # Initialize session state for chat history
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = [SystemMessage(content="You are a helpful assistant.")]
 
 # Streamlit app title
-st.title("Chat with AI Assistant")
+st.title("Streamlit Chatbot")
 
 # Function to check if the input is an image generation request
 def is_image_request(user_input):
@@ -38,18 +42,19 @@ def generate_image(prompt):
     try:
         response = client.generate_content(
             prompt,
-            generation_config={"response_mime_type": "image/png"}
+            generation_config={"mime_type": "image/png"}
         )
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                image_data = part.inline_data.data
-                image = Image.open(BytesIO(image_data))
-                # Convert image to base64 for Streamlit display and storage
-                buffered = BytesIO()
-                image.save(buffered, format="PNG")
-                img_str = base64.b64encode(buffered.getvalue()).decode()
-                return image, img_str
-        return None, None
+        for candidate in response.candidates:
+            for part in candidate.content.parts:
+                if hasattr(part, 'file_data') and part.file_data:
+                    image_data = part.file_data.file_data
+                    image = Image.open(BytesIO(image_data))
+                    # Convert image to base64 for Streamlit display and storage
+                    buffered = BytesIO()
+                    image.save(buffered, format="PNG")
+                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                    return image, img_str
+        return None, "No image data found in response."
     except Exception as e:
         return None, f"Error generating image: {str(e)}"
 
@@ -57,13 +62,13 @@ def generate_image(prompt):
 for message in st.session_state.chat_history:
     if isinstance(message, HumanMessage):
         with st.chat_message("user"):
-            st.write(message.content)
+            st.markdown(message.content)
     elif isinstance(message, AIMessage):
         with st.chat_message("assistant"):
             if hasattr(message, 'image_data') and message.image_data:
                 st.image(base64.b64decode(message.image_data), caption="Generated Image")
             if message.content:
-                st.write(message.content)
+                st.markdown(message.content)
 
 # Input box for user message
 user_input = st.chat_input("Type your message here...")
@@ -78,7 +83,7 @@ if user_input:
         
         # Display user message immediately
         with st.chat_message("user"):
-            st.write(user_input)
+            st.markdown(user_input)
         
         # Check if the request is for image generation
         if is_image_request(user_input):
@@ -89,17 +94,17 @@ if user_input:
                     # Store image in chat history as base64
                     st.session_state.chat_history.append(AIMessage(content="", image_data=img_str))
                 else:
-                    error_msg = img_str or "Failed to generate image."
-                    st.write(error_msg)
-                    st.session_state.chat_history.append(AIMessage(content=error_msg))
+                    st.markdown(img_str)
+                    st.session_state.chat_history.append(AIMessage(content=img_str))
         else:
             # Get text-based AI response
             with st.chat_message("assistant"):
                 try:
                     result = llm.invoke(st.session_state.chat_history)
-                    st.write(result.content)
+                    st.markdown(result.content)
                     st.session_state.chat_history.append(AIMessage(content=result.content))
                 except Exception as e:
                     error_msg = f"Error processing text request: {str(e)}"
-                    st.write(error_msg)
+                    st.markdown(error_msg)
+                    st.session_state.chat_history.append(AIMessage(content=error_msg))
                     st.session_state.chat_history.append(AIMessage(content=error_msg))
