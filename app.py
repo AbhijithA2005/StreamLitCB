@@ -1,74 +1,86 @@
 import streamlit as st
-from langchain_google_genai import ChatGoogleGenerativeAI, GenerativeModel
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+# For Google GenAI SDK (Image Generation)
+from google import genai
+from google.genai import types
+from PIL import Image
+from io import BytesIO
 import os
 
-# Set Google API Key from Streamlit secrets
-os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+# Initialize LangChain chat model for text
+llm_text = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
 
-# Initialize the LLM for chat
-chat_llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+# Initialize Google GenAI client for image generation
+API_KEY = os.getenv("GOOGLE_API_KEY")
+client = genai.Client(api_key=API_KEY)
 
-# Initialize the Generative Model for image generation
-image_model = GenerativeModel(model_name="gemini-pro-vision")
+# Session state for chat history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-# Initialize session state for chat history
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = [SystemMessage(content="You are a helpful assistant capable of both text and image generation.")]
+st.title("🧠 Gemini Chatbot with Image Generation")
 
-# Streamlit app title
-st.title("Chat with AI Assistant (with Image Generation)")
+# Chat input
+prompt = st.chat_input("Say something or request an image...")
+
+if prompt:
+    st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+    if "generate image:" in prompt.lower():
+        image_prompt = prompt.lower().replace("generate image:", "").strip()
+        with st.spinner("Generating image..."):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash-preview-image-generation",
+                    contents=image_prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["TEXT", "IMAGE"]
+                    )
+                )
+                text_response = ""
+                image_data = None
+
+                for part in response.candidates[0].content.parts:
+                    if part.text:
+                        text_response += part.text
+                    elif part.inline_data:
+                        image = Image.open(BytesIO(part.inline_data.data))
+                        image_data = image
+
+                # Store only text response in history, not image data
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": text_response, "is_image": True, "image_prompt": image_prompt}
+                )
+                # Display image immediately without storing in history
+                st.session_state.chat_history.append({"role": "assistant", "image_data": image_data})
+
+            except Exception as e:
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": f"Image generation failed: {str(e)}"}
+                )
+
+    else:
+        with st.spinner("Thinking..."):
+            try:
+                response = llm_text.invoke(
+                    [HumanMessage(content=prompt)]
+                )
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": response.content}
+                )
+            except Exception as e:
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": f"Chat generation failed: {str(e)}"}
+                )
 
 # Display chat history
-for message in st.session_state.chat_history:
-    if isinstance(message, HumanMessage):
-        with st.chat_message("user"):
-            st.write(message.content)
-    elif isinstance(message, AIMessage):
-        with st.chat_message("assistant"):
-            if hasattr(message.additional_kwargs, 'get') and message.additional_kwargs.get('image'):
-                st.image(message.additional_kwargs['image'], caption="Generated Image")
-                st.write(message.content)
-            else:
-                st.write(message.content)
-
-# Input box for user message
-user_input = st.chat_input("Type your message here (or ask for an image)...")
-
-if user_input:
-    if user_input.lower() == "quit":
-        st.session_state.chat_history = [SystemMessage(content="You are a helpful assistant capable of both text and image generation.")]
-        st.experimental_rerun()
-    else:
-        # Add user message to chat history
-        st.session_state.chat_history.append(HumanMessage(content=user_input))
-
-        # Display user message immediately
-        with st.chat_message("user"):
-            st.write(user_input)
-
-        with st.chat_message("assistant"):
-            if "image" in user_input.lower() or "picture" in user_input.lower() or "generate" in user_input.lower():
-                try:
-                    response = image_model.generate_content(user_input)
-                    image_part = None
-                    for part in response.parts:
-                        if part.mime_type.startswith("image/"):
-                            image_part = part.data
-                            break
-
-                    if image_part:
-                        st.image(image_part, caption="Generated Image")
-                        ai_response = AIMessage(content="Here is the image you requested.", additional_kwargs={'image': image_part})
-                    else:
-                        ai_response = AIMessage(content="I can generate images, but the response didn't contain one this time.")
-                except Exception as e:
-                    ai_response = AIMessage(content=f"Sorry, I encountered an error while generating the image: {e}")
-            else:
-                # Get AI response for text
-                result = chat_llm.invoke(st.session_state.chat_history)
-                ai_response = AIMessage(content=result.content)
-                st.write(result.content)
-
-            # Add AI response to chat history
-            st.session_state.chat_history.append(ai_response)
+for msg in st.session_state.chat_history:
+    if msg["role"] == "user":
+        st.chat_message("user").write(msg["content"])
+    elif msg["role"] == "assistant":
+        if "image_data" in msg:
+            st.chat_message("assistant").image(msg["image_data"], caption="Generated Image")
+        else:
+            st.chat_message("assistant").write(msg["content"])
