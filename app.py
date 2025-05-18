@@ -3,6 +3,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GenerativeModel
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 import os
 
+# Set Google API Key from Streamlit secrets
 os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 
 # Initialize the LLM for chat
