@@ -1,3 +1,7 @@
 streamlit
+langchain_google_genai
+google.generativeai
+pillow
+stability-sdk
 langchain
-langchain-google-genai
+google-genai
